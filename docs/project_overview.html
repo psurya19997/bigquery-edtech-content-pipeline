@@ -1,0 +1,172 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learning Content Pulse</title>
+<style>
+:root{
+  --bg:#f7f7f5;--card:#ffffff;--ink:#1d1d1f;--muted:#5f6368;--line:#dcdcd6;
+  --src:#2f6fde;--src-bg:#e8f0fd;--ing:#8a5cd6;--ing-bg:#f1eafc;
+  --bq:#0f8a6a;--bq-bg:#e4f5ef;--out:#d9771f;--out-bg:#fdf0e3;--goal:#c23b5a;--goal-bg:#fce8ed;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#131416;--card:#1c1d20;--ink:#ececec;--muted:#a0a4aa;--line:#34363b;
+  --src:#7ea6f5;--src-bg:#1b2638;--ing:#b89af0;--ing-bg:#261f36;
+  --bq:#4fd1a9;--bq-bg:#132b24;--out:#f2a55c;--out-bg:#332414;--goal:#f07e98;--goal-bg:#35191f;}}
+:root[data-theme="dark"]{
+  --bg:#131416;--card:#1c1d20;--ink:#ececec;--muted:#a0a4aa;--line:#34363b;
+  --src:#7ea6f5;--src-bg:#1b2638;--ing:#b89af0;--ing-bg:#261f36;
+  --bq:#4fd1a9;--bq-bg:#132b24;--out:#f2a55c;--out-bg:#332414;--goal:#f07e98;--goal-bg:#35191f;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:28px;margin:0 0 4px;letter-spacing:-.01em}
+h2{font-size:18px;margin:36px 0 12px}
+.sub{color:var(--muted);margin:0 0 20px}
+.goal{background:var(--goal-bg);border-left:4px solid var(--goal);border-radius:10px;padding:16px 18px}
+.goal b{color:var(--goal)}
+.goal ul{margin:8px 0 0;padding-left:20px}
+/* pipeline */
+.flow{display:grid;grid-template-columns:1.25fr auto 1fr auto 1.35fr auto 1.1fr;gap:10px;align-items:stretch}
+.col{display:flex;flex-direction:column;gap:8px}
+.colhead{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px}
+.box b{display:block;font-size:14px;margin-bottom:2px}
+.box small{color:var(--muted);display:block}
+.src .colhead{color:var(--src)} .src .box{border-left:4px solid var(--src)}
+.ing .colhead{color:var(--ing)} .ing .box{border-left:4px solid var(--ing)}
+.bq .colhead{color:var(--bq)}  .bq .box{border-left:4px solid var(--bq)}
+.out .colhead{color:var(--out)} .out .box{border-left:4px solid var(--out)}
+.arrow{display:flex;align-items:center;color:var(--muted);font-size:22px}
+.layer{background:var(--bq-bg)}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--src-bg);color:var(--src);margin:2px 3px 0 0}
+.ok{background:var(--bq-bg);color:var(--bq)} .no{background:var(--goal-bg);color:var(--goal)}
+.ops{margin-top:10px;background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--muted)}
+/* tables */
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:13px}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+code{font:12px ui-monospace,Consolas,monospace;background:var(--bg);padding:1px 5px;border-radius:4px}
+.wrap{overflow-x:auto}
+/* dashboard */
+.dash{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.page{background:var(--card);border:1px solid var(--line);border-top:4px solid var(--out);border-radius:10px;padding:12px}
+.page b{display:block;margin-bottom:4px}
+.page .q{color:var(--muted);font-size:13px}
+.page .who{font-size:11px;color:var(--out);font-weight:700;text-transform:uppercase;margin-top:8px}
+/* journey */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;counter-reset:s}
+.step{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 12px 12px 44px;position:relative;font-size:13px}
+.step:before{counter-increment:s;content:counter(s);position:absolute;left:12px;top:12px;width:22px;height:22px;border-radius:50%;background:var(--goal);color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center}
+.foot{color:var(--muted);font-size:12px;margin-top:30px}
+@media (max-width:900px){
+  .flow{grid-template-columns:1fr}.arrow{justify-content:center;transform:rotate(90deg);height:18px}
+  .dash{grid-template-columns:1fr 1fr}.steps{grid-template-columns:1fr 1fr}}
+@media (max-width:520px){.dash,.steps{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<h1>Learning Content Pulse</h1>
+<p class="sub">Indian-language learning content: supply, demand &amp; performance. An automated GCP pipeline built on public data only.</p>
+
+<div class="goal">
+  <b>Goal:</b> find where Indian-language learners are underserved (lots of use, too little content) and what makes educational content actually get used. Then turn that into a ranked list of "what to localize next".
+  <ul>
+    <li><b>Decision it supports:</b> which language × grade × subject × state board to create or translate content for first.</li>
+    <li><b>Skills it demonstrates:</b> APIs + Google Sheets → BigQuery (ELT) → dashboard, with data-quality checks, statistics and Git.</li>
+  </ul>
+</div>
+
+<h2>1 · How data flows</h2>
+<div class="flow">
+  <div class="col src">
+    <div class="colhead">Sources (public)</div>
+    <div class="box"><b>DIKSHA API</b><small>Govt school-content platform · 275K resources · usage numbers</small></div>
+    <div class="box"><b>YouTube RSS</b><small>Khan Academy India channels · views per video, daily</small></div>
+    <div class="box"><b>UNESCO UIS API</b><small>Completion &amp; out-of-school rates</small></div>
+    <div class="box"><b>World Bank API</b><small>Enrollment, literacy, spend</small></div>
+    <div class="box"><b>Google Sheet</b><small>Your "Localization Plan" (made by you, deliberately messy)</small></div>
+  </div>
+  <div class="arrow">➜</div>
+  <div class="col ing">
+    <div class="colhead">Ingestion (GCP)</div>
+    <div class="box"><b>Cloud Scheduler</b><small>Daily / weekly / monthly triggers</small></div>
+    <div class="box"><b>Cloud Functions</b><small>One Python job per source. Retries, rate limit, rerun-safe</small></div>
+    <div class="box"><b>DIKSHA planner</b><small>Splits queries so none passes the 10K paging cap</small></div>
+  </div>
+  <div class="arrow">➜</div>
+  <div class="col bq">
+    <div class="colhead">BigQuery warehouse</div>
+    <div class="box layer"><b>raw</b><small>Exactly what the APIs returned, append-only, stamped with load time</small></div>
+    <div class="box layer"><b>staging</b><small>Cleaned, typed, de-duplicated; arrays split into bridge tables; names trimmed</small></div>
+    <div class="box layer"><b>marts</b><small>Business tables: supply–demand gaps, language coverage, content performance, plan vs gap</small></div>
+    <div class="box"><b>Dataform</b><small>SQL transformations + data-quality assertions, in Git</small></div>
+  </div>
+  <div class="arrow">➜</div>
+  <div class="col out">
+    <div class="colhead">Outputs</div>
+    <div class="box"><b>Looker Studio</b><small>5-page dashboard reading the marts</small></div>
+    <div class="box"><b>Python notebooks</b><small>EDA, diagnostics, regression, hypothesis tests</small></div>
+    <div class="box"><b>Insights memo</b><small>1 page for a content / partnerships lead</small></div>
+    <div class="box"><b>Streamlit (stretch)</b><small>Gap explorer → export next-10 targets</small></div>
+  </div>
+</div>
+<div class="ops"><b>ops dataset (monitoring):</b> every run logs rows loaded and errors · data-quality results · rejected Sheet rows · hours since last successful load, all shown on the dashboard's Data Health page.</div>
+
+<h2>2 · What data each source gives (tested 29 Sep 2026)</h2>
+<div class="wrap"><table>
+<tr><th>Source</th><th>Status</th><th>Key fields</th><th>Real example</th><th>Refresh</th><th>Used for</th></tr>
+<tr><td><b>DIKSHA</b><br><small>POST, no key</small></td><td><span class="tag ok">working</span></td>
+<td>board, grade, subject, medium (language), category, format, created/updated dates, play sessions, time spent, rating</td>
+<td>MH board · Class 6 Maths · "Basic Concepts in Geometry" · 311,900 sessions · rating 3.77</td>
+<td>Content: weekly full + daily changes · usage: daily</td><td>Supply, demand, gap score, regression</td></tr>
+<tr><td><b>YouTube RSS</b><br><small>no key</small></td><td><span class="tag ok">working</span></td>
+<td>video id, title, published date, views, rating; title tags ([Hinglish], Grade, subject); link to the practice exercise</td>
+<td>"Bayes theorem – solving an equation [Hinglish] | Grade 12" · 5,996 views</td>
+<td>Daily snapshot (latest 15 videos per channel)</td><td>Content performance, views over time</td></tr>
+<tr><td><b>UNESCO UIS</b><br><small>no key</small></td><td><span class="tag ok">working</span></td>
+<td>indicator, country, year, value</td><td>India primary completion 2019: 94.2%</td><td>Monthly</td><td>National context</td></tr>
+<tr><td><b>World Bank</b><br><small>no key</small></td><td><span class="tag ok">working</span></td>
+<td>indicator, country, year, value (some years empty)</td><td>India primary completion 2025: 90.3%</td><td>Monthly</td><td>India vs peers</td></tr>
+<tr><td><b>Google Sheet</b><br><small>service account</small></td><td><span class="tag">you create</span></td>
+<td>language, board, grade, subject, resources planned, owner, status, target date</td><td>"Marathi · Class 6 · Science · 12 planned · in_production"</td>
+<td>Daily snapshot</td><td>Plan vs gap alignment</td></tr>
+<tr><td><b>data.gov.in</b></td><td><span class="tag no">dropped</span></td><td colspan="4">Returned 503, 500 and a timeout on 29 Sep 2026, too unreliable for a scheduled pipeline.</td></tr>
+</table></div>
+
+<h2>3 · How the data connects to the dashboard</h2>
+<div class="wrap"><table>
+<tr><th>Mart (BigQuery table)</th><th>Built from</th><th>Feeds dashboard page</th></tr>
+<tr><td><code>mart_language_coverage</code></td><td>DIKSHA content</td><td>1 · Language Coverage</td></tr>
+<tr><td><code>mart_supply_demand</code> (with <code>gap_score</code>)</td><td>DIKSHA content + usage</td><td>2 · Supply–Demand Gaps</td></tr>
+<tr><td><code>mart_content_features</code>, <code>mart_youtube_performance</code></td><td>DIKSHA usage + YouTube</td><td>3 · Content Performance</td></tr>
+<tr><td><code>mart_plan_vs_gap</code></td><td>Google Sheet + gap score</td><td>4 · Plan vs Gap</td></tr>
+<tr><td><code>ops.*</code></td><td>Every pipeline run</td><td>5 · Data Health</td></tr>
+<tr><td><code>mart_national_context</code></td><td>UIS + World Bank</td><td>Context panel on pages 1–2</td></tr>
+</table></div>
+<p class="sub" style="margin-top:8px">Gap score (per state board): rank of <i>sessions per resource</i> minus rank of <i>number of resources</i>. High = heavily used but few items, i.e. under-supplied.</p>
+
+<h2>4 · Dashboard pages</h2>
+<div class="dash">
+  <div class="page"><b>1 · Language Coverage</b><div class="q">How complete is content in each Khan Academy language, by grade and subject?</div><div class="who">Content lead</div></div>
+  <div class="page"><b>2 · Supply–Demand Gaps</b><div class="q">Which cells are heavily used but have little content?</div><div class="who">Partnerships</div></div>
+  <div class="page"><b>3 · Content Performance</b><div class="q">Which formats and topics get used? How do YouTube views grow?</div><div class="who">Content lead</div></div>
+  <div class="page"><b>4 · Plan vs Gap</b><div class="q">Is the localization plan targeting real gaps?</div><div class="who">Program manager</div></div>
+  <div class="page"><b>5 · Data Health</b><div class="q">Is data fresh? Did checks pass? What got rejected?</div><div class="who">Data team</div></div>
+</div>
+
+<h2>5 · From data to decision</h2>
+<div class="steps">
+  <div class="step"><b>Collect</b><br>5 sources load automatically every day, week or month.</div>
+  <div class="step"><b>Clean &amp; check</b><br>Fix real issues: mislabelled languages, missing fields, duplicates, messy Sheet rows.</div>
+  <div class="step"><b>Analyse</b><br>Gap score + regression + 3 hypothesis tests on real usage data.</div>
+  <div class="step"><b>Act</b><br>Dashboard + memo: "Localize these 10 cells next", compared with the team's plan.</div>
+</div>
+
+<p class="foot">Not affiliated with Khan Academy or DIKSHA. Uses public data only; no employer data. Full spec: PROJECT_BRIEF.md.</p>
+</main>
+</body>
+</html>

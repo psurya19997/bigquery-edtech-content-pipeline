@@ -1,0 +1,23 @@
+# secrets
+.env
+*.key.json
+*-sa.json
+service-account*.json
+
+# private job-application material (not for the public repo)
+Khan acedemy data nalyst role.pdf
+docs/archive/
+
+# local outputs
+scripts/api_samples/
+data/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# private planning docs
+PROJECT_BRIEF.md
+CLAUDE.md
