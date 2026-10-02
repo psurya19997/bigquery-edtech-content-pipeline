@@ -68,7 +68,25 @@ Full write-up with recommendations and caveats: [reports/insights_memo.md](repor
 | Plan vs Gap | Is the localization plan going where the gaps are? | `marts.mart_plan_vs_gap`, `mart_unplanned_gaps` |
 | Data Health | Is the pipeline fresh and working? | `ops.v_freshness`, `v_run_history` |
 
-`<add screenshots from docs/screenshots/>`
+**1. Language Coverage** (Marathi shown)
+
+![Language Coverage](docs/screenshots/01-language-coverage.png)
+
+**2. Supply–Demand Gaps** (Marathi shown)
+
+![Supply-Demand Gaps](docs/screenshots/02-supply-demand-gaps.png)
+
+**3. Content Performance**
+
+![Content Performance](docs/screenshots/03-content-performance.png)
+
+**4. Plan vs Gap** (synthetic localization plan)
+
+![Plan vs Gap](docs/screenshots/04-plan-vs-gap.png)
+
+**5. Data Health**
+
+![Data Health](docs/screenshots/05-data-health.png)
 
 ## Repository layout
 
