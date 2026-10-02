@@ -1,0 +1,53 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "One row per DIKSHA resource per (cleaned) language of instruction. A resource tagged with two mediums has two rows; resources with no medium get one 'Unknown' row, so every resource appears at least once.",
+  bigquery: {
+    clusterBy: ["language"]
+  },
+  assertions: {
+    uniqueKey: ["identifier", "language"],
+    nonNull: ["identifier", "language"]
+  }
+}
+
+WITH tagged AS (
+  SELECT
+    c.identifier,
+    raw_medium,
+    COALESCE(m.language, INITCAP(TRIM(raw_medium))) AS language,
+    m.script,
+    COALESCE(m.is_focus_language, FALSE) AS is_focus_language,
+    m.medium_key IS NOT NULL AS is_mapped
+  FROM ${ref("stg_diksha_content")} AS c,
+    UNNEST(c.medium) AS raw_medium
+  LEFT JOIN ${ref("language_map")} AS m
+    ON m.medium_key = LOWER(TRIM(raw_medium))
+  WHERE TRIM(raw_medium) != ''
+)
+
+-- "PUNJABI" and "Punjabi" on the same resource collapse into one Punjabi row.
+SELECT
+  identifier,
+  language,
+  ANY_VALUE(script) AS script,
+  LOGICAL_OR(is_focus_language) AS is_focus_language,
+  LOGICAL_AND(is_mapped) AS is_mapped,
+  ARRAY_AGG(DISTINCT raw_medium ORDER BY raw_medium) AS raw_values
+FROM tagged
+GROUP BY identifier, language
+
+UNION ALL
+
+-- Resources with no usable medium: keep them visible as 'Unknown' instead of dropping them.
+SELECT
+  c.identifier,
+  'Unknown' AS language,
+  CAST(NULL AS STRING) AS script,
+  FALSE AS is_focus_language,
+  FALSE AS is_mapped,
+  CAST([] AS ARRAY<STRING>) AS raw_values
+FROM ${ref("stg_diksha_content")} AS c
+WHERE NOT EXISTS (
+  SELECT 1 FROM UNNEST(c.medium) AS raw_medium WHERE TRIM(raw_medium) != ''
+)

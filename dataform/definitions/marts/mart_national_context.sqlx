@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "National education indicators (World Bank + UNESCO UIS) for India and peers, with change since the previous available year, a latest-year flag per country, and each country's rank among the countries reporting that indicator in that year.",
+  assertions: {
+    uniqueKey: ["source", "indicator_id", "country_iso3", "year"]
+  }
+}
+
+WITH with_previous AS (
+  SELECT
+    *,
+    LAG(year) OVER w AS previous_year,
+    LAG(value) OVER w AS previous_value,
+    year = MAX(year) OVER (PARTITION BY source, indicator_id, country_iso3) AS is_latest_year
+  FROM ${ref("stg_indicators")}
+  WINDOW w AS (PARTITION BY source, indicator_id, country_iso3 ORDER BY year)
+)
+
+SELECT
+  source,
+  indicator_id,
+  indicator_name,
+  country_iso3,
+  country_name,
+  country_iso3 = 'IND' AS is_india,
+  year,
+  value,
+  previous_year,
+  previous_value,
+  value - previous_value AS change_since_previous,  -- gaps between years are common
+  is_latest_year,
+  is_gross_ratio,
+  -- Rank within the same indicator and year (1 = highest value). Whether high is good
+  -- depends on the indicator (completion: yes; out-of-school: no).
+  RANK() OVER (PARTITION BY source, indicator_id, year ORDER BY value DESC) AS rank_in_year,
+  COUNT(*) OVER (PARTITION BY source, indicator_id, year) AS countries_in_year,
+  source_release
+FROM with_previous

@@ -1,0 +1,11 @@
+config {
+  type: "assertion",
+  description: "Fails if more than 20% of Localization Plan rows are rejected: a sign the sheet's format changed (e.g. a new date style or renamed statuses), not just a few typos. The seed sheet has 3 rejects in 25 rows (12%)."
+}
+
+-- An assertion passes when this query returns no rows.
+SELECT
+  COUNT(*) AS total_rows,
+  COUNTIF(NOT is_valid) AS rejected_rows
+FROM ${ref("stg_localization_plan")}
+HAVING SAFE_DIVIDE(COUNTIF(NOT is_valid), COUNT(*)) > 0.20

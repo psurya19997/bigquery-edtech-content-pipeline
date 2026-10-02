@@ -1,0 +1,11 @@
+config {
+  type: "assertion",
+  description: "Fails the 07:00 Dataform run if a daily source (DIKSHA incremental/metrics, YouTube) has not loaded successfully in 30 hours, so a broken ingestion job shows up as a red run instead of silently stale marts."
+}
+
+-- An assertion passes when this query returns no rows.
+SELECT source, mode, last_success_at, hours_since_success, last_run_status, last_error
+FROM ${ref("v_freshness")}
+WHERE cadence = 'daily'
+  AND source != 'dataform'  -- its own rebuild is in progress while this runs
+  AND health IN ('Stale', 'Never loaded')

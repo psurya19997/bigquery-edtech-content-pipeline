@@ -1,0 +1,5 @@
+defaultProject: learning-reach-473210
+defaultLocation: asia-south1
+defaultDataset: staging
+defaultAssertionDataset: ops
+dataformCoreVersion: 3.0.0

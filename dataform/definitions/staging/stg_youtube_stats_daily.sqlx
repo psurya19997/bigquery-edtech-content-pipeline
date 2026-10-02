@@ -1,0 +1,64 @@
+config {
+  type: "incremental",
+  schema: "staging",
+  description: "One row per YouTube video per day: the day's totals (deduplicated when the job ran twice) and the change since the previous snapshot, e.g. views_per_day. Incremental, same pattern as stg_diksha_metrics_daily.",
+  uniqueKey: ["snapshot_date", "video_id"],
+  bigquery: {
+    partitionBy: "snapshot_date",
+    clusterBy: ["video_id"]
+  },
+  assertions: {
+    uniqueKey: ["snapshot_date", "video_id"],
+    nonNull: ["snapshot_date", "video_id"],
+    rowConditions: ["views_per_day IS NULL OR views_per_day >= 0"]
+  }
+}
+
+pre_operations {
+  DECLARE start_date DEFAULT (
+    ${when(incremental(),
+      `SELECT DATE_SUB(MAX(snapshot_date), INTERVAL 1 DAY) FROM ${self()}`,
+      `SELECT DATE '2000-01-01'`)}
+  );
+}
+
+WITH latest AS (
+  -- The job ran twice on 2 Oct 2026 (test + forced run): keep the last load per day.
+  SELECT snapshot_date, video_id, channel_id, view_count, like_count, comment_count, _ingested_at
+  FROM ${ref("raw", "youtube_video_stats_snapshot")}
+  WHERE snapshot_date >= start_date
+    AND video_id IS NOT NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY snapshot_date, video_id ORDER BY _ingested_at DESC) = 1
+),
+
+with_previous AS (
+  SELECT
+    *,
+    LAG(snapshot_date) OVER w AS previous_snapshot_date,
+    LAG(view_count) OVER w AS previous_view_count,
+    LAG(like_count) OVER w AS previous_like_count
+  FROM latest
+  WINDOW w AS (PARTITION BY video_id ORDER BY snapshot_date)
+)
+
+SELECT
+  snapshot_date,
+  video_id,
+  channel_id,
+  view_count,
+  like_count,
+  comment_count,
+  previous_snapshot_date,
+  DATE_DIFF(snapshot_date, previous_snapshot_date, DAY) AS days_since_previous,
+  view_count < previous_view_count AS is_decrease,  -- YouTube sometimes removes invalid views
+  SAFE_DIVIDE(
+    IF(view_count >= previous_view_count, view_count - previous_view_count, NULL),
+    DATE_DIFF(snapshot_date, previous_snapshot_date, DAY)
+  ) AS views_per_day,
+  SAFE_DIVIDE(
+    IF(like_count >= previous_like_count, like_count - previous_like_count, NULL),
+    DATE_DIFF(snapshot_date, previous_snapshot_date, DAY)
+  ) AS likes_per_day,
+  _ingested_at AS loaded_at
+FROM with_previous
+${when(incremental(), `WHERE snapshot_date > start_date`)}

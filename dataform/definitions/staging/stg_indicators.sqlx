@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "World Bank and UNESCO UIS education indicators in one tidy table (source, indicator, country, year, value), latest load of each source only, years without data dropped.",
+  assertions: {
+    uniqueKey: ["source", "indicator_id", "country_iso3", "year"],
+    nonNull: ["source", "indicator_id", "country_iso3", "year", "value"],
+    rowConditions: ["value >= 0"]
+  }
+}
+
+WITH worldbank AS (
+  SELECT *
+  FROM ${ref("raw", "worldbank_indicators")}
+  WHERE _load_id = (
+    SELECT _load_id FROM ${ref("raw", "worldbank_indicators")} ORDER BY _ingested_at DESC LIMIT 1
+  )
+),
+
+uis AS (
+  SELECT *
+  FROM ${ref("raw", "uis_indicators")}
+  WHERE _load_id = (
+    SELECT _load_id FROM ${ref("raw", "uis_indicators")} ORDER BY _ingested_at DESC LIMIT 1
+  )
+),
+
+combined AS (
+  SELECT
+    'World Bank' AS source,
+    indicator_id,
+    indicator_name,
+    country_iso3,
+    year,
+    value,
+    source_last_updated AS source_release,
+    _ingested_at AS loaded_at
+  FROM worldbank
+  UNION ALL
+  SELECT
+    'UNESCO UIS',
+    indicator_id,
+    indicator_name,
+    geo_unit,
+    year,
+    value,
+    last_data_update_description,
+    _ingested_at
+  FROM uis
+)
+
+SELECT
+  source,
+  indicator_id,
+  indicator_name,
+  country_iso3,
+  CASE country_iso3
+    WHEN 'IND' THEN 'India' WHEN 'BGD' THEN 'Bangladesh' WHEN 'PAK' THEN 'Pakistan'
+    WHEN 'NPL' THEN 'Nepal' WHEN 'LKA' THEN 'Sri Lanka'
+  END AS country_name,
+  year,
+  value,
+  -- Gross ratios count over- and under-age pupils too, so they can exceed 100 (India primary 111).
+  REGEXP_CONTAINS(LOWER(COALESCE(indicator_name, '')), r'gross') AS is_gross_ratio,
+  source_release,
+  loaded_at
+FROM combined
+WHERE value IS NOT NULL  -- years with no data
+  AND year IS NOT NULL

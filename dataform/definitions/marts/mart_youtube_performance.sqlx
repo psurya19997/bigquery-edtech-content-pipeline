@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "One row per YouTube video per day: views, views per day and age, joined with video attributes parsed from titles/descriptions (Hinglish, grade, subject, unit). Public data of the Khan Academy India channels; not affiliated.",
+  bigquery: {
+    partitionBy: "snapshot_date",
+    clusterBy: ["channel_id", "video_id"]
+  },
+  assertions: {
+    uniqueKey: ["snapshot_date", "video_id"]
+  }
+}
+
+SELECT
+  s.snapshot_date,
+  s.video_id,
+  v.channel_id,
+  v.channel_title,
+  v.title,
+  v.published_at,
+  DATE_DIFF(s.snapshot_date, DATE(v.published_at), DAY) AS days_since_publish,
+  v.is_hinglish,
+  v.grade_num,
+  v.subject_group,
+  v.course_slug,
+  v.unit_slug,
+  v.exercise_slug IS NOT NULL AS links_to_exercise,
+  v.duration_seconds,
+  v.has_captions,
+  v.default_audio_language,
+  s.view_count,
+  s.views_per_day,
+  s.like_count,
+  s.likes_per_day,
+  s.comment_count,
+  SAFE_DIVIDE(s.like_count, s.view_count) AS like_rate,
+  s.is_decrease
+FROM ${ref("stg_youtube_stats_daily")} AS s
+JOIN ${ref("stg_youtube_videos")} AS v USING (video_id)

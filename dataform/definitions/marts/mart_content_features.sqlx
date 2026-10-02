@@ -1,0 +1,103 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "One row per DIKSHA resource (teacher content flagged by is_teacher_content; filter it out for student analyses) with model-ready features (language group, grade band, subject, format, age, board type, rating) and usage outcomes (play_sessions, log_play_sessions). Input for the regression and hypothesis tests. Multi-valued tags are summarised: e.g. a resource in two languages gets language_group = 'Multilingual'.",
+  bigquery: {
+    clusterBy: ["language_group"]
+  },
+  assertions: {
+    uniqueKey: ["identifier"],
+    nonNull: ["identifier", "language_group", "grade_band", "subject", "format", "board_type"]
+  }
+}
+
+WITH langs AS (
+  SELECT
+    identifier,
+    COUNTIF(language != 'Unknown') AS n_languages,
+    ANY_VALUE(IF(language != 'Unknown', language, NULL)) AS any_language,
+    LOGICAL_OR(is_focus_language) AS has_focus_language
+  FROM ${ref("stg_diksha_medium")}
+  GROUP BY identifier
+),
+
+grades AS (
+  SELECT
+    identifier,
+    COUNT(grade_num) AS n_grades,
+    MIN(grade_num) AS min_grade,
+    MAX(grade_num) AS max_grade
+  FROM ${ref("stg_diksha_grade")}
+  GROUP BY identifier
+),
+
+subjects AS (
+  SELECT
+    identifier,
+    COUNTIF(subject_group NOT IN ('Unknown', 'Other')) AS n_subjects,
+    ANY_VALUE(IF(subject_group NOT IN ('Unknown', 'Other'), subject_group, NULL)) AS any_subject,
+    LOGICAL_OR(subject_group = 'Teacher training') AS is_teacher_content
+  FROM ${ref("stg_diksha_subject")}
+  GROUP BY identifier
+)
+
+SELECT
+  c.identifier,
+  -- Language: one language -> its name (grouped), several -> Multilingual
+  CASE
+    WHEN l.n_languages = 0 THEN 'Unknown'
+    WHEN l.n_languages > 1 THEN 'Multilingual'
+    WHEN l.any_language = 'English' THEN 'English'
+    WHEN l.any_language = 'Hindi' THEN 'Hindi'
+    WHEN l.has_focus_language THEN 'Other focus language'  -- Marathi, Gujarati, Kannada, Punjabi, Assamese
+    ELSE 'Other regional language'
+  END AS language_group,
+  IF(l.n_languages = 1, l.any_language, NULL) AS language,
+  l.n_languages,
+  -- Grade: band of the lowest tagged class; many grades flagged separately
+  CASE
+    WHEN g.min_grade IS NULL THEN 'No class tag'
+    WHEN g.min_grade <= 5 THEN 'Primary (1-5)'
+    WHEN g.min_grade <= 8 THEN 'Upper primary (6-8)'
+    WHEN g.min_grade <= 10 THEN 'Secondary (9-10)'
+    ELSE 'Senior secondary (11-12)'
+  END AS grade_band,
+  g.min_grade,
+  g.max_grade,
+  g.n_grades,
+  g.n_grades > 3 AS is_multigrade,
+  CASE
+    WHEN s.n_subjects = 0 THEN 'Unknown'
+    WHEN s.n_subjects > 1 THEN 'Multiple'
+    ELSE s.any_subject
+  END AS subject,
+  s.is_teacher_content,
+  c.primary_category,
+  CASE
+    WHEN STARTS_WITH(c.mime_type, 'video/') THEN 'Video'
+    WHEN c.mime_type = 'application/pdf' THEN 'PDF'
+    WHEN REGEXP_CONTAINS(c.mime_type, r'ecml-archive|html-archive|h5p') THEN 'Interactive'
+    WHEN REGEXP_CONTAINS(c.mime_type, r'content-collection') THEN 'Collection'
+    ELSE 'Other'
+  END AS format,
+  c.mime_type,
+  CASE
+    WHEN LOWER(c.board) IN ('cbse', 'ncert') THEN 'National'
+    WHEN STARTS_WITH(LOWER(c.board), 'state') THEN 'State'
+    WHEN STARTS_WITH(LOWER(c.board), 'ut') THEN 'Union territory'
+    ELSE 'Other / none'
+  END AS board_type,
+  LOWER(TRIM(c.board)) AS board,
+  c.created_on,
+  DATE_DIFF(CURRENT_DATE(), DATE(c.created_on), DAY) AS content_age_days,
+  c.play_sessions,
+  c.play_sessions IS NOT NULL AS has_usage,
+  LN(COALESCE(c.play_sessions, 0) + 1) AS log_play_sessions,  -- usage is heavy-tailed
+  SAFE_DIVIDE(c.time_spent_sec, c.play_sessions) AS seconds_per_session,
+  c.avg_rating,
+  c.ratings_count,
+  c.ratings_count >= 10 AS has_reliable_rating
+FROM ${ref("stg_diksha_content")} AS c
+LEFT JOIN langs AS l USING (identifier)
+LEFT JOIN grades AS g USING (identifier)
+LEFT JOIN subjects AS s USING (identifier)

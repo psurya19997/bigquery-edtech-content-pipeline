@@ -1,0 +1,76 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "One row per DIKSHA resource per grade. 'class 6' / 'grade 6' -> Class 6 (grade_num 6); pre-school spellings -> Pre-primary; cpd -> Teacher training; cwsn -> Special needs. Resources with no grade get one 'Unknown' row.",
+  bigquery: {
+    clusterBy: ["grade_label"]
+  },
+  assertions: {
+    uniqueKey: ["identifier", "grade_label"],
+    nonNull: ["identifier", "grade_label", "grade_band"],
+    rowConditions: ["grade_num IS NULL OR grade_num BETWEEN 1 AND 12"]
+  }
+}
+
+-- Raw values seen on 2 Oct 2026 (33): class 1..12, grade 9/10, others/other, cpd, cwsn,
+-- adult education, secondary, senior secondary, foundational stage, preschool 1-3,
+-- preprimary 1-2, kg, l.k.g, u.k.g, k-shreni, pre-school, and one stray 'hindi'.
+WITH parsed AS (
+  SELECT
+    identifier,
+    raw_grade,
+    LOWER(TRIM(raw_grade)) AS k,
+    SAFE_CAST(REGEXP_EXTRACT(LOWER(TRIM(raw_grade)), r'^(?:class|grade)\s*(\d{1,2})$') AS INT64) AS n
+  FROM ${ref("stg_diksha_content")},
+    UNNEST(grade_level) AS raw_grade
+  WHERE TRIM(raw_grade) != ''
+),
+
+labelled AS (
+  SELECT
+    identifier,
+    raw_grade,
+    IF(n BETWEEN 1 AND 12, n, NULL) AS grade_num,
+    CASE
+      WHEN n BETWEEN 1 AND 12 THEN CONCAT('Class ', CAST(n AS STRING))
+      -- 'foundational stage' (NEP 2020) spans pre-school to Class 2: grouped with pre-primary
+      WHEN REGEXP_CONTAINS(k, r'pre-?school|pre-?primary|^kg$|l\.?k\.?g|u\.?k\.?g|k-shreni|foundational')
+        THEN 'Pre-primary'
+      WHEN k = 'secondary' THEN 'Secondary (unspecified)'
+      WHEN k = 'senior secondary' THEN 'Senior secondary (unspecified)'
+      WHEN k = 'cpd' THEN 'Teacher training'
+      WHEN k = 'cwsn' THEN 'Special needs (CWSN)'
+      WHEN k = 'adult education' THEN 'Adult education'
+      ELSE 'Other'
+    END AS grade_label
+  FROM parsed
+)
+
+SELECT
+  identifier,
+  grade_label,
+  ANY_VALUE(grade_num) AS grade_num,
+  ANY_VALUE(CASE
+    WHEN grade_num BETWEEN 1 AND 5 THEN 'Primary (1-5)'
+    WHEN grade_num BETWEEN 6 AND 8 THEN 'Upper primary (6-8)'
+    WHEN grade_num BETWEEN 9 AND 10 OR grade_label = 'Secondary (unspecified)' THEN 'Secondary (9-10)'
+    WHEN grade_num BETWEEN 11 AND 12 OR grade_label = 'Senior secondary (unspecified)'
+      THEN 'Senior secondary (11-12)'
+    ELSE grade_label
+  END) AS grade_band,
+  ARRAY_AGG(DISTINCT raw_grade ORDER BY raw_grade) AS raw_values
+FROM labelled
+GROUP BY identifier, grade_label
+
+UNION ALL
+
+SELECT
+  c.identifier,
+  'Unknown' AS grade_label,
+  CAST(NULL AS INT64) AS grade_num,
+  'Unknown' AS grade_band,
+  CAST([] AS ARRAY<STRING>) AS raw_values
+FROM ${ref("stg_diksha_content")} AS c
+WHERE NOT EXISTS (
+  SELECT 1 FROM UNNEST(c.grade_level) AS g WHERE TRIM(g) != ''
+)

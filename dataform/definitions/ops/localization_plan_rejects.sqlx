@@ -1,0 +1,20 @@
+config {
+  type: "view",
+  schema: "ops",
+  description: "Sheet rows that failed cleaning, with the reasons, for the person who maintains the sheet to fix. Shown on the Data Health dashboard page."
+}
+
+SELECT
+  sheet_row,
+  plan_id,
+  ARRAY_TO_STRING(reject_reasons, ', ') AS reasons,
+  language_raw,
+  grade_raw,
+  subject_raw,
+  resources_planned_raw,
+  status,
+  target_date_raw,
+  loaded_at
+FROM ${ref("stg_localization_plan")}
+WHERE NOT is_valid
+ORDER BY sheet_row

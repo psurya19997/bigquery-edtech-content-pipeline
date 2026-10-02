@@ -1,0 +1,5 @@
+functions-framework>=3.5,<4
+google-auth>=2.29,<3
+google-cloud-bigquery>=3.25,<4
+requests>=2.31,<3
+tenacity>=8.2,<10

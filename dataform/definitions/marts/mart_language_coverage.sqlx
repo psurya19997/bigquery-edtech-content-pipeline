@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Coverage grid for each language with 1,000+ DIKSHA resources: every Class 1-12 x core subject combination, including empty ones (n_resources = 0), across all boards. Answers 'how complete is content in each language?'. Student content only.",
+  assertions: {
+    uniqueKey: ["language", "grade_num", "subject_group"]
+  }
+}
+
+WITH content AS (
+  SELECT m.language, m.is_focus_language, g.grade_num, s.subject_group, c.identifier, c.play_sessions
+  FROM ${ref("stg_diksha_content")} AS c
+  JOIN ${ref("stg_diksha_medium")} AS m USING (identifier)
+  JOIN ${ref("stg_diksha_grade")} AS g USING (identifier)
+  JOIN ${ref("stg_diksha_subject")} AS s USING (identifier)
+  WHERE g.grade_num IS NOT NULL AND m.language != 'Unknown'
+),
+
+languages AS (
+  SELECT language, LOGICAL_OR(is_focus_language) AS is_focus_language
+  FROM content
+  GROUP BY language
+  HAVING COUNT(DISTINCT identifier) >= 1000
+),
+
+grid AS (
+  -- Every language x class x core subject, so missing combinations show up as zeros.
+  SELECT l.language, l.is_focus_language, grade_num, subject_group
+  FROM languages AS l
+  CROSS JOIN UNNEST(GENERATE_ARRAY(1, 12)) AS grade_num
+  CROSS JOIN UNNEST([
+    'Mathematics', 'Science', 'Social Science', 'English', 'Hindi',
+    'Environmental Studies', 'Other languages'
+  ]) AS subject_group
+),
+
+counts AS (
+  SELECT
+    language,
+    grade_num,
+    subject_group,
+    COUNT(DISTINCT identifier) AS n_resources,
+    SUM(play_sessions) AS total_play_sessions
+  FROM content
+  GROUP BY language, grade_num, subject_group
+)
+
+SELECT
+  g.language,
+  g.is_focus_language,
+  g.grade_num,
+  CONCAT('Class ', CAST(g.grade_num AS STRING)) AS grade_label,
+  g.subject_group,
+  COALESCE(c.n_resources, 0) AS n_resources,
+  COALESCE(c.total_play_sessions, 0) AS total_play_sessions,
+  COALESCE(c.n_resources, 0) > 0 AS has_content,
+  COALESCE(c.n_resources, 0) >= 10 AS is_well_covered,  -- threshold: at least 10 resources
+  -- Curriculum structure, not gaps: EVS is taught only in Classes 1-5, and Science / Social
+  -- Science become separate subjects only from Class 6 (before that they are part of EVS).
+  -- v1 counted Science/Social Science in 1-5 as gaps, understating coverage (2 Oct 2026).
+  NOT (
+    (g.subject_group = 'Environmental Studies' AND g.grade_num > 5)
+    OR (g.subject_group IN ('Science', 'Social Science') AND g.grade_num <= 5)
+  ) AS is_applicable
+FROM grid AS g
+LEFT JOIN counts AS c
+  ON c.language = g.language
+  AND c.grade_num = g.grade_num
+  AND c.subject_group = g.subject_group

@@ -1,0 +1,51 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "Maps every spelling/case variant of DIKSHA's medium to one standard language name, with its script and whether it is one of the focus languages. Values not listed here fall back to INITCAP(TRIM(value)) in stg_diksha_medium; the assertion assert_medium_unmapped flags common values that are missing from this map.",
+  assertions: {
+    uniqueKey: ["medium_key"]
+  }
+}
+
+-- medium_key = LOWER(TRIM(raw value)), so "PUNJABI", "Punjabi" and "punjabi " all match one row.
+-- Variants found in the data on 1 Oct 2026: Oriya, Sankrit, Pharsi, Arabi, Konakni,
+-- Santhali, Bishnupuria Manipuri, plus upper-case PUNJABI / ENGLISH / HINDI.
+SELECT * FROM UNNEST([
+  STRUCT('english' AS medium_key, 'English' AS language, 'Latin' AS script, FALSE AS is_focus_language),
+  ('hindi', 'Hindi', 'Devanagari', TRUE),
+  ('marathi', 'Marathi', 'Devanagari', TRUE),
+  ('gujarati', 'Gujarati', 'Gujarati', TRUE),
+  ('kannada', 'Kannada', 'Kannada', TRUE),
+  ('punjabi', 'Punjabi', 'Gurmukhi', TRUE),
+  ('assamese', 'Assamese', 'Bengali-Assamese', TRUE),
+  ('telugu', 'Telugu', 'Telugu', FALSE),
+  ('tamil', 'Tamil', 'Tamil', FALSE),
+  ('odia', 'Odia', 'Odia', FALSE),
+  ('oriya', 'Odia', 'Odia', FALSE),
+  ('urdu', 'Urdu', 'Perso-Arabic', FALSE),
+  ('sanskrit', 'Sanskrit', 'Devanagari', FALSE),
+  ('sankrit', 'Sanskrit', 'Devanagari', FALSE),
+  ('bengali', 'Bengali', 'Bengali-Assamese', FALSE),
+  ('bodo', 'Bodo', 'Devanagari', FALSE),
+  ('malayalam', 'Malayalam', 'Malayalam', FALSE),
+  ('konkani', 'Konkani', 'Devanagari', FALSE),
+  ('konakni', 'Konkani', 'Devanagari', FALSE),
+  ('manipuri', 'Manipuri', 'Bengali-Assamese', FALSE),
+  ('bishnupriya manipuri', 'Bishnupriya Manipuri', 'Bengali-Assamese', FALSE),
+  ('bishnupuria manipuri', 'Bishnupriya Manipuri', 'Bengali-Assamese', FALSE),
+  ('sindhi', 'Sindhi', 'Perso-Arabic', FALSE),
+  ('nepali', 'Nepali', 'Devanagari', FALSE),
+  ('mizo', 'Mizo', 'Latin', FALSE),
+  ('dogri', 'Dogri', 'Devanagari', FALSE),
+  ('kashmiri', 'Kashmiri', 'Perso-Arabic', FALSE),
+  ('maithili', 'Maithili', 'Devanagari', FALSE),
+  ('santali', 'Santali', 'Ol Chiki', FALSE),
+  ('santhali', 'Santali', 'Ol Chiki', FALSE),
+  ('arabic', 'Arabic', 'Arabic', FALSE),
+  ('arabi', 'Arabic', 'Arabic', FALSE),
+  ('persian', 'Persian', 'Perso-Arabic', FALSE),
+  ('pharsi', 'Persian', 'Perso-Arabic', FALSE),
+  ('french', 'French', 'Latin', FALSE),
+  ('other', 'Unknown', CAST(NULL AS STRING), FALSE),
+  ('languages', 'Unknown', CAST(NULL AS STRING), FALSE)
+])

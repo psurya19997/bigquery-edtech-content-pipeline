@@ -1,0 +1,20 @@
+config {
+  type: "view",
+  schema: "ops",
+  description: "Ingestion runs per day (IST) and source over the last 30 days: runs, successes, failures, test runs, rows loaded and the latest error. For the Data Health page's run-history chart."
+}
+
+SELECT
+  DATE(started_at, 'Asia/Kolkata') AS run_date,
+  source,
+  mode,
+  COUNT(*) AS runs,
+  COUNTIF(status = 'success') AS successes,
+  COUNTIF(status = 'failed') AS failures,
+  COUNTIF(status = 'partial') AS test_runs,
+  SUM(IF(status = 'success', rows_loaded, 0)) AS rows_loaded,
+  ARRAY_AGG(error_message IGNORE NULLS ORDER BY started_at DESC LIMIT 1)[SAFE_OFFSET(0)] AS latest_error,
+  MAX(TIMESTAMP_DIFF(finished_at, started_at, SECOND)) AS longest_run_seconds
+FROM ${ref("ops", "ingestion_log")}
+WHERE started_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+GROUP BY run_date, source, mode

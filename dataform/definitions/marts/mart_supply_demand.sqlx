@@ -1,0 +1,86 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Supply vs demand of DIKSHA student content per board x language x grade x subject group. Within each language: demand_share = cell plays / language plays, supply_share = cell resources / language resources, gap_score = demand_share - supply_share (> 0 = under-supplied, e.g. 0.045 = 4.5 points more demand than supply). demand_supply_ratio = demand_share / supply_share. Caveats: usage is DIKSHA portal plays only; a resource tagged with several grades/subjects counts in each.",
+  assertions: {
+    uniqueKey: ["board", "language", "grade_num", "subject_group"],
+    nonNull: ["board", "language", "grade_num", "subject_group", "n_resources"],
+    rowConditions: ["gap_score IS NULL OR gap_score BETWEEN -1 AND 1"]
+  }
+}
+
+WITH recent_usage AS (
+  -- Average plays per day over the last 7 days of daily snapshots (fewer while history is short).
+  SELECT identifier, AVG(plays_per_day) AS plays_per_day_recent
+  FROM ${ref("stg_diksha_metrics_daily")}
+  WHERE snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
+  GROUP BY identifier
+),
+
+student_content AS (
+  SELECT
+    LOWER(TRIM(c.board)) AS board,
+    m.language,
+    m.is_focus_language,
+    g.grade_num,
+    g.grade_band,
+    s.subject_group,
+    c.identifier,
+    c.play_sessions,
+    c.avg_rating,
+    u.plays_per_day_recent
+  FROM ${ref("stg_diksha_content")} AS c
+  JOIN ${ref("stg_diksha_medium")} AS m USING (identifier)
+  JOIN ${ref("stg_diksha_grade")} AS g USING (identifier)
+  JOIN ${ref("stg_diksha_subject")} AS s USING (identifier)
+  LEFT JOIN recent_usage AS u USING (identifier)
+  WHERE g.grade_num IS NOT NULL  -- Class 1-12 only
+    AND s.subject_group NOT IN ('Teacher training', 'Unknown', 'Other')
+    AND m.language != 'Unknown'
+    AND TRIM(COALESCE(c.board, '')) != ''  -- some boards are empty strings, not NULL
+    -- Curriculum structure (same rule as mart_language_coverage): EVS only in Classes 1-5,
+    -- Science / Social Science only from Class 6. Without this, multi-class tags produced
+    -- fake gaps such as "CBSE Class 5 Science" or "Assamese EVS Class 11" (2 Oct 2026).
+    AND NOT (
+      (s.subject_group = 'Environmental Studies' AND g.grade_num > 5)
+      OR (s.subject_group IN ('Science', 'Social Science') AND g.grade_num <= 5)
+    )
+),
+
+cells AS (
+  SELECT
+    board,
+    language,
+    ANY_VALUE(is_focus_language) AS is_focus_language,
+    grade_num,
+    ANY_VALUE(grade_band) AS grade_band,
+    subject_group,
+    COUNT(DISTINCT identifier) AS n_resources,
+    COUNT(DISTINCT IF(play_sessions IS NOT NULL, identifier, NULL)) AS n_with_usage,
+    SUM(play_sessions) AS total_play_sessions,
+    SUM(plays_per_day_recent) AS plays_per_day_recent,
+    APPROX_QUANTILES(avg_rating, 2)[SAFE_OFFSET(1)] AS median_rating
+  FROM student_content
+  GROUP BY board, language, grade_num, subject_group
+),
+
+shares AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(total_play_sessions, SUM(total_play_sessions) OVER (PARTITION BY language))
+      AS demand_share,
+    SAFE_DIVIDE(n_resources, SUM(n_resources) OVER (PARTITION BY language)) AS supply_share
+  FROM cells
+)
+
+-- First version ranked cells by percent-rank of usage-per-resource minus percent-rank of
+-- resource count; that pushed tiny low-demand cells to the top (2 Oct 2026). Comparing each
+-- cell's share of the language's demand with its share of supply fixes that.
+SELECT
+  *,
+  CONCAT('Class ', CAST(grade_num AS STRING)) AS grade_label,
+  SAFE_DIVIDE(total_play_sessions, n_resources) AS sessions_per_resource,
+  -- > 0: the cell gets more of the language's plays than its share of resources (under-supplied)
+  demand_share - supply_share AS gap_score,
+  SAFE_DIVIDE(demand_share, supply_share) AS demand_supply_ratio
+FROM shares
