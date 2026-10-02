@@ -21,3 +21,7 @@ __pycache__/
 # private planning docs
 PROJECT_BRIEF.md
 CLAUDE.md
+PROGRESS.md
+.claude/
+.pytest_cache/
+.ruff_cache/
