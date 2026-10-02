@@ -1,0 +1,29 @@
+[project]
+name = "learning-content-pulse"
+version = "0.1.0"
+description = "GCP pipeline: public Indian education data -> BigQuery -> Looker Studio"
+requires-python = ">=3.11"
+# Runtime deps live next to each Cloud Run function (functions/*/requirements.txt).
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "requests>=2.31",
+    "tenacity>=8.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["functions/diksha"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["main"]

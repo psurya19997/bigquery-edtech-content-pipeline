@@ -1,0 +1,26 @@
+plan_id,language,board,grade,subject,resources_planned,owner,status,target_date,last_updated,notes
+LP-001,Hindi,CBSE,Class 5,Mathematics,30,content-north,planned,2026-10-15,2026-08-10,Pilot 1
+LP-002,English,CBSE,Class 10,Science,45,content-east,in_production,2026-11-20,2026-09-05,
+LP-003,"Marathi ",State (Maharashtra),Class 4,Environmental Studies,25,content-west,published,2026-10-05,2026-08-20,Waiting for review
+LP-004,Gujarati,State (Gujarat),Class 8,Mathematics,50,content-west,dropped,2027-01-10,2026-09-15,
+LP-005,Kannada,State (Karnataka),Class 9,Science,60,content-south,planned,2027-03-15,2026-09-20,To be reviewed
+LP-006,Punjabi,State (Punjab),Class 6,Social Science,40,translation-team,in_production,2026-12-01,2026-08-25,
+LP-007,Assamese,State (Assam),Class 7,English,35,content-east,planned,2027-02-28,2026-09-01,
+LP-008,Odia,State (Odisha),Class 10,Mathematics,55,translation-team,published,2026-10-25,2026-09-10,
+LP-009,marathi,State (Maharashtra),Class 5,Hindi,20,content-west,planned,2027-04-10,2026-08-15,Need more authors
+LP-010,MR,State (Maharashtra),Class 3,Mathematics,15,content-west,in_production,2027-05-20,2026-08-30,Draft in progress
+LP-011,Oriya,State (Odisha),Class 8,Science,65,translation-team,dropped,2026-11-30,2026-09-12,Cancelled due to budget
+LP-012,Hindi,State (Uttar Pradesh),6,Social Science,40,content-north,in_production,2027-01-15,2026-09-05,Priority for UP
+LP-013,English,CBSE,VII,Science,50,content-north,planned,2027-02-10,2026-08-28,NCERT mapped
+LP-014,Gujarati,State (Gujarat),Class 4,Environmental Studies,30,content-west,in_production,15/12/2026,2026-09-02,Translation pending
+LP-015,Kannada,State (Karnataka),Class 10,Mathematics,70,content-south,,2027-06-15,2026-08-22,
+LP-016,Punjabi,State (Punjab),Class 5,English,forty,content-north,published,2026-10-30,2026-09-18,
+LP-017,Assamese,State (Assam),Class 9,Science,45,content-east,published,2027-04-25,2026-08-05,
+LP-018,Hindi,CBSE,Class 8,Hindi,50,content-north,in_production,2027-05-10,2026-09-22,
+LP-019,English,CBSE,Class 9,Social Science,60,translation-team,published,2026-10-10,2026-08-12,
+LP-020,Marathi,State (Maharashtra),Class 7,Mathematics,55,content-west,planned,2027-03-05,2026-09-25,
+LP-021,Gujarati,State (Gujarat),Class 6,Science,40,content-west,in_production,2026-11-15,2026-08-18,
+LP-022,Kannada,State (Karnataka),Class 8,Social Science,45,content-south,dropped,2027-02-20,2026-09-08,
+LP-023,Punjabi,State (Punjab),Class 10,Hindi,35,translation-team,planned,2027-06-01,2026-09-28,
+LP-024,Odia,State (Odisha),Class 5,Environmental Studies,25,content-east,in_production,2026-12-20,2026-08-15,
+LP-005,Kannada,State (Karnataka),Class 9,Science,60,content-south,planned,2027-03-15,2026-09-20,To be reviewed
