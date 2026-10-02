@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "One row per DIKSHA resource per subject group. DIKSHA has ~607 raw subject values (maths/mathematics, evs/environmental studies, 'ii language english', 'first language-telugu', teacher-training tags...), grouped here into 14 subject groups by keyword rules (checked against the top 70 values on 2 Oct 2026). Resources with no subject get one 'Unknown' row.",
+  bigquery: {
+    clusterBy: ["subject_group"]
+  },
+  assertions: {
+    uniqueKey: ["identifier", "subject_group"],
+    nonNull: ["identifier", "subject_group"]
+  }
+}
+
+-- Rule ORDER matters: e.g. 'political science' must hit Social Science before Science,
+-- 'computer science' must hit Computer Science, 'ii language english' must hit English.
+-- Group names Mathematics / Science / English / Hindi / Social Science /
+-- Environmental Studies match the Localization Plan sheet, so the two can be joined.
+WITH grouped AS (
+  SELECT
+    identifier,
+    raw_subject,
+    CASE
+      WHEN REGEXP_CONTAINS(k, r'\bcpd\b|training|d\.?\s?el\.?\s?ed|capacity building|in-service|teacher|^education$|pedagog')
+        THEN 'Teacher training'
+      -- NEP 2020 early-years area: before English/Maths/languages so it isn't split across them
+      WHEN REGEXP_CONTAINS(k, r'foundational literacy|early literacy|early numeracy|\bfln\b')
+        THEN 'Foundational literacy and numeracy'
+      WHEN REGEXP_CONTAINS(k, r'english') THEN 'English'
+      WHEN REGEXP_CONTAINS(k, r'hindi') THEN 'Hindi'
+      WHEN REGEXP_CONTAINS(k, r'math|numeracy') THEN 'Mathematics'
+      WHEN REGEXP_CONTAINS(k, r'^evs|environmental stud|world around us') THEN 'Environmental Studies'
+      WHEN REGEXP_CONTAINS(k, r'social|history|geograph|civics|political|economics|sociology')
+        THEN 'Social Science'
+      WHEN REGEXP_CONTAINS(k, r'computer|\bict\b|information tech|coding') THEN 'Computer Science'
+      WHEN REGEXP_CONTAINS(k, r'accountan|business|commerce') THEN 'Commerce'
+      WHEN REGEXP_CONTAINS(k, r'home science|vocational|life skill|value education')
+        THEN 'Vocational and life skills'
+      WHEN REGEXP_CONTAINS(k, r'science|physics|chemistry|biolog|botany|zoology') THEN 'Science'
+      WHEN REGEXP_CONTAINS(k, r'language|literacy|\bmil\b|urdu|sanskrit|gujarati|telugu|tamil|marathi|kannada|bengali|assamese|punjabi|odia|oriya|malayalam|konkani|kokani|french|arabic|persian|nepali|bodo|manipuri|sindhi|kashmiri')
+        THEN 'Other languages'
+      WHEN REGEXP_CONTAINS(k, r'\bart|physical education|health|music|dance|yoga|sport|craft')
+        THEN 'Arts and physical education'
+      ELSE 'Other'
+    END AS subject_group
+  FROM (
+    SELECT identifier, raw_subject, LOWER(TRIM(raw_subject)) AS k
+    FROM ${ref("stg_diksha_content")},
+      UNNEST(subject) AS raw_subject
+    WHERE TRIM(raw_subject) != ''
+  )
+)
+
+SELECT
+  identifier,
+  subject_group,
+  ARRAY_AGG(DISTINCT raw_subject ORDER BY raw_subject) AS raw_values
+FROM grouped
+GROUP BY identifier, subject_group
+
+UNION ALL
+
+SELECT
+  c.identifier,
+  'Unknown' AS subject_group,
+  CAST([] AS ARRAY<STRING>) AS raw_values
+FROM ${ref("stg_diksha_content")} AS c
+WHERE NOT EXISTS (
+  SELECT 1 FROM UNNEST(c.subject) AS s WHERE TRIM(s) != ''
+)

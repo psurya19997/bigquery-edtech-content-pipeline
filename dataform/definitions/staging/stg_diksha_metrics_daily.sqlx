@@ -1,0 +1,84 @@
+config {
+  type: "incremental",
+  schema: "staging",
+  description: "One row per DIKSHA resource per day: the day's running totals (deduplicated when the metrics job ran twice) and the change since the previous snapshot, e.g. plays_per_day. Incremental: each run only processes new days, so cost stays flat as history grows.",
+  uniqueKey: ["snapshot_date", "identifier"],
+  bigquery: {
+    partitionBy: "snapshot_date",
+    clusterBy: ["identifier"]
+  },
+  assertions: {
+    uniqueKey: ["snapshot_date", "identifier"],
+    nonNull: ["snapshot_date", "identifier"],
+    rowConditions: [
+      "plays_per_day IS NULL OR plays_per_day >= 0",
+      "days_since_previous IS NULL OR days_since_previous >= 1"
+    ]
+  }
+}
+
+pre_operations {
+  -- Incremental runs re-read from the day before the last processed day, so the newest
+  -- existing day is available as "yesterday" when computing today's change.
+  -- The first (or full-refresh) run reads everything.
+  DECLARE start_date DEFAULT (
+    ${when(incremental(),
+      `SELECT DATE_SUB(MAX(snapshot_date), INTERVAL 1 DAY) FROM ${self()}`,
+      `SELECT DATE '2000-01-01'`)}
+  );
+}
+
+WITH latest AS (
+  -- The metrics job can run more than once a day (it did on 1 Oct 2026): keep the last load.
+  SELECT
+    snapshot_date,
+    identifier,
+    SAFE_CAST(JSON_VALUE(play_sessions_json, '$.portal') AS INT64) AS plays_total,
+    SAFE_CAST(JSON_VALUE(time_spent_json, '$.portal') AS FLOAT64) AS time_spent_sec_total,
+    IF(COALESCE(ratings_count, 0) = 0, NULL, avg_rating) AS avg_rating,
+    ratings_count,
+    _ingested_at
+  FROM ${ref("raw", "diksha_metrics_snapshot")}
+  WHERE snapshot_date >= start_date  -- partition filter: only the days needed are scanned
+    AND identifier IS NOT NULL
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY snapshot_date, identifier
+    ORDER BY _ingested_at DESC
+  ) = 1
+),
+
+with_previous AS (
+  SELECT
+    *,
+    LAG(snapshot_date) OVER w AS previous_snapshot_date,
+    LAG(plays_total) OVER w AS previous_plays_total,
+    LAG(time_spent_sec_total) OVER w AS previous_time_spent_sec_total
+  FROM latest
+  WINDOW w AS (PARTITION BY identifier ORDER BY snapshot_date)
+)
+
+SELECT
+  snapshot_date,
+  identifier,
+  plays_total,
+  time_spent_sec_total,
+  avg_rating,
+  ratings_count,
+  previous_snapshot_date,
+  DATE_DIFF(snapshot_date, previous_snapshot_date, DAY) AS days_since_previous,
+  plays_total - previous_plays_total AS plays_change,
+  -- Totals should only grow. A drop (data correction on DIKSHA's side) is flagged, not used.
+  plays_total < previous_plays_total AS is_decrease,
+  -- Per day, so a missed day (2-day gap) isn't counted as one big day.
+  SAFE_DIVIDE(
+    IF(plays_total >= previous_plays_total, plays_total - previous_plays_total, NULL),
+    DATE_DIFF(snapshot_date, previous_snapshot_date, DAY)
+  ) AS plays_per_day,
+  SAFE_DIVIDE(
+    IF(time_spent_sec_total >= previous_time_spent_sec_total,
+       time_spent_sec_total - previous_time_spent_sec_total, NULL),
+    DATE_DIFF(snapshot_date, previous_snapshot_date, DAY)
+  ) AS time_spent_sec_per_day,
+  _ingested_at AS loaded_at
+FROM with_previous
+${when(incremental(), `WHERE snapshot_date > start_date`)}

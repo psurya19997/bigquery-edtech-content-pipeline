@@ -1,0 +1,67 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "One row per YouTube video (latest details), with fields parsed from the title (Hinglish tag, grade, subject group) and from the first practice/learning link in the description (course, unit, lesson, exercise). View counts live in stg_youtube_stats_daily.",
+  bigquery: {
+    clusterBy: ["channel_id"]
+  },
+  assertions: {
+    uniqueKey: ["video_id"],
+    nonNull: ["video_id", "channel_id", "title", "published_at"],
+    rowConditions: ["grade_num IS NULL OR grade_num BETWEEN 1 AND 12"]
+  }
+}
+
+WITH latest AS (
+  SELECT *
+  FROM ${ref("raw", "youtube_videos")}
+  WHERE video_id IS NOT NULL
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY _ingested_at DESC) = 1
+),
+
+parsed AS (
+  SELECT
+    *,
+    LOWER(title) AS t,
+    -- First link to the practice site, e.g.
+    -- khanacademy.org/math/ncert-class-12/x..:probability-ncert-new/x..:baye-s-theorem/e/bayes-theorem
+    REGEXP_EXTRACT(description, r'khanacademy\.org/([A-Za-z0-9_\-:./]+)') AS link_path
+  FROM latest
+)
+
+SELECT
+  video_id,
+  channel_id,
+  channel_title,
+  SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*SZ', published_at) AS published_at,
+  title,
+  -- Title tags, e.g. "Bayes' theorem [Hinglish] | Grade 12 | Math"
+  REGEXP_CONTAINS(t, r'hinglish') AS is_hinglish,
+  SAFE_CAST(REGEXP_EXTRACT(t, r'(?:grade|class)\s*(\d{1,2})\b') AS INT64) AS grade_num,
+  CASE
+    WHEN REGEXP_CONTAINS(t, r'math|algebra|geometry|trigonometr|calculus|probabilit|statistic|arithmetic')
+      THEN 'Mathematics'
+    WHEN REGEXP_CONTAINS(t, r'physics|chemistry|biology|science') THEN 'Science'
+    WHEN REGEXP_CONTAINS(t, r'history|geography|civics|economics|social') THEN 'Social Science'
+    WHEN REGEXP_CONTAINS(t, r'english|grammar') THEN 'English'
+    WHEN REGEXP_CONTAINS(t, r'hindi') THEN 'Hindi'
+    ELSE 'Other'
+  END AS subject_group,
+  link_path,
+  SPLIT(link_path, '/')[SAFE_OFFSET(0)] AS link_domain,  -- e.g. math, science
+  SPLIT(link_path, '/')[SAFE_OFFSET(1)] AS course_slug,  -- e.g. ncert-class-12
+  REGEXP_REPLACE(SPLIT(link_path, '/')[SAFE_OFFSET(2)], r'^[^:]*:', '') AS unit_slug,  -- drop "x..:" ids
+  REGEXP_REPLACE(SPLIT(link_path, '/')[SAFE_OFFSET(3)], r'^[^:]*:', '') AS lesson_slug,
+  REGEXP_EXTRACT(link_path, r'/e/([^/?#]+)') AS exercise_slug,
+  ARRAY_LENGTH(REGEXP_EXTRACT_ALL(description, r'\n\s*\d{1,2}:\d{2}')) AS n_chapter_markers,
+  description,
+  tags,
+  default_audio_language,
+  duration_seconds,
+  caption AS has_captions,
+  license,
+  made_for_kids,
+  topic_categories,
+  view_count AS view_count_when_first_seen,
+  _ingested_at AS loaded_at
+FROM parsed

@@ -1,0 +1,14 @@
+config {
+  type: "assertion",
+  description: "Fails if a medium value used by 100+ resources is not in language_map. Catches new spelling variants (e.g. a future 'GUJRATI') before they split a language in the marts. Rare values (< 100 resources) fall back to INITCAP and are fine."
+}
+
+-- An assertion passes when this query returns no rows.
+SELECT
+  LOWER(TRIM(raw_medium)) AS medium_key,
+  COUNT(DISTINCT identifier) AS resources
+FROM ${ref("stg_diksha_content")},
+  UNNEST(medium) AS raw_medium
+WHERE LOWER(TRIM(raw_medium)) NOT IN (SELECT medium_key FROM ${ref("language_map")})
+GROUP BY medium_key
+HAVING resources >= 100

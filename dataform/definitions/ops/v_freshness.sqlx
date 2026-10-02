@@ -1,0 +1,79 @@
+config {
+  type: "view",
+  schema: "ops",
+  description: "Pipeline health at a glance: one row per source (and one for the Dataform rebuild) with the last successful load, hours since then, the last run's status and a health verdict. A view, so 'hours since' is always computed at query time. Feeds the Data Health dashboard page."
+}
+
+WITH expected AS (
+  -- Every source we expect to see, so a source that never loaded still shows up.
+  -- Daily sources are stale after 30 h (one missed morning + slack); manual ones never are.
+  SELECT * FROM UNNEST([
+    STRUCT('diksha' AS source, 'incremental' AS mode, 'daily' AS cadence, 30 AS max_hours),
+    ('diksha', 'metrics', 'daily', 30),
+    ('youtube', 'snapshot', 'daily', 30),
+    ('worldbank', 'full', 'manual', CAST(NULL AS INT64)),
+    ('uis', 'full', 'manual', CAST(NULL AS INT64)),
+    ('sheets', 'snapshot', 'manual', CAST(NULL AS INT64))
+  ])
+),
+
+last_success AS (
+  SELECT source, mode, MAX(started_at) AS last_success_at
+  FROM ${ref("ops", "ingestion_log")}
+  WHERE status = 'success'
+  GROUP BY source, mode
+),
+
+last_run AS (
+  SELECT
+    source,
+    mode,
+    ARRAY_AGG(STRUCT(started_at, status, rows_loaded, error_message)
+              ORDER BY started_at DESC LIMIT 1)[OFFSET(0)] AS run
+  FROM ${ref("ops", "ingestion_log")}
+  GROUP BY source, mode
+),
+
+sources AS (
+  SELECT
+    e.source,
+    e.mode,
+    e.cadence,
+    s.last_success_at,
+    TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), s.last_success_at, HOUR) AS hours_since_success,
+    r.run.started_at AS last_run_at,
+    r.run.status AS last_run_status,
+    r.run.rows_loaded AS last_run_rows,
+    r.run.error_message AS last_error,
+    CASE
+      WHEN s.last_success_at IS NULL THEN 'Never loaded'
+      WHEN e.cadence = 'daily'
+        AND TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), s.last_success_at, HOUR) > e.max_hours THEN 'Stale'
+      WHEN r.run.status = 'failed' THEN 'Last run failed'
+      ELSE 'OK'
+    END AS health
+  FROM expected AS e
+  LEFT JOIN last_success AS s USING (source, mode)
+  LEFT JOIN last_run AS r USING (source, mode)
+),
+
+dataform AS (
+  -- When the marts were last rebuilt (Dataform's daily 07:00 run).
+  SELECT TIMESTAMP_MILLIS(MAX(last_modified_time)) AS last_rebuild_at
+  FROM `${dataform.projectConfig.defaultDatabase}.marts.__TABLES__`
+)
+
+SELECT * FROM sources
+UNION ALL
+SELECT
+  'dataform' AS source,
+  'all actions' AS mode,
+  'daily' AS cadence,
+  last_rebuild_at AS last_success_at,
+  TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), last_rebuild_at, HOUR) AS hours_since_success,
+  last_rebuild_at AS last_run_at,
+  CAST(NULL AS STRING) AS last_run_status,  -- run status lives in Dataform's execution logs
+  CAST(NULL AS INT64) AS last_run_rows,
+  CAST(NULL AS STRING) AS last_error,
+  IF(TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), last_rebuild_at, HOUR) > 30, 'Stale', 'OK') AS health
+FROM dataform

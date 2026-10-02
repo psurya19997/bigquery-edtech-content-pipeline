@@ -1,0 +1,45 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "One clean row per DIKSHA resource: the latest version of each identifier, dates parsed, usage numbers extracted. Language (medium) normalisation comes in a later step.",
+  bigquery: {
+    clusterBy: ["identifier"]
+  },
+  assertions: {
+    uniqueKey: ["identifier"],
+    nonNull: ["identifier", "name", "created_on", "last_updated_on"]
+  }
+}
+
+-- raw.diksha_content is append-only: a resource appears once per load (full load, then again
+-- whenever it is edited). Keep only the newest version of each identifier.
+SELECT
+  identifier,
+  TRIM(REGEXP_REPLACE(name, r'^\s*\(NEW\)\s*', '')) AS name,
+  REGEXP_CONTAINS(name, r'^\s*\(NEW\)') AS name_had_new_prefix,
+  board,
+  medium,  -- raw values (e.g. PUNJABI / Punjabi); cleaned in stg_diksha_medium
+  gradeLevel AS grade_level,
+  subject,
+  primaryCategory AS primary_category,
+  contentType AS content_type,
+  mimeType AS mime_type,
+  license,
+  channel,
+  framework,
+  -- DIKSHA format: 2018-10-16T14:43:22.143+0000
+  SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*S%z', createdOn) AS created_on,
+  SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*S%z', lastUpdatedOn) AS last_updated_on,
+  SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*S%z', lastPublishedOn) AS last_published_on,
+  -- Usage is nested per channel, e.g. {"portal": 4133}: running totals at load time
+  SAFE_CAST(JSON_VALUE(play_sessions_json, '$.portal') AS INT64) AS play_sessions,
+  SAFE_CAST(JSON_VALUE(time_spent_json, '$.portal') AS FLOAT64) AS time_spent_sec,
+  IF(COALESCE(ratings_count, 0) = 0, NULL, avg_rating) AS avg_rating,  -- no ratings -> no average
+  ratings_count,
+  _ingested_at AS loaded_at
+FROM ${ref("raw", "diksha_content")}
+WHERE identifier IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY identifier
+  ORDER BY lastUpdatedOn DESC, _ingested_at DESC
+) = 1

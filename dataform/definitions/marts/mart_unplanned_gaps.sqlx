@@ -1,0 +1,45 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "The 10 biggest supply/demand gaps per focus language (Hindi, Marathi, Gujarati, Kannada, Punjabi, Assamese) that no active Localization Plan row (status not 'dropped') covers yet. The 'what should we plan next?' list.",
+  assertions: {
+    uniqueKey: ["language", "board", "grade_num", "subject_group"]
+  }
+}
+
+WITH active_plans AS (
+  SELECT DISTINCT board_key, language, grade_num, subject_group
+  FROM ${ref("stg_localization_plan")}
+  WHERE is_valid AND status != 'dropped'
+),
+
+open_gaps AS (
+  SELECT c.*
+  FROM ${ref("mart_supply_demand")} AS c
+  LEFT JOIN active_plans AS p
+    ON p.board_key = c.board
+    AND p.language = c.language
+    AND p.grade_num = c.grade_num
+    AND p.subject_group = c.subject_group
+  WHERE c.is_focus_language
+    AND c.gap_score > 0
+    AND p.language IS NULL  -- not covered by any active plan
+)
+
+SELECT
+  language,
+  RANK() OVER (PARTITION BY language ORDER BY gap_score DESC) AS gap_rank,
+  board,
+  grade_label,
+  grade_num,
+  subject_group,
+  n_resources,
+  total_play_sessions,
+  sessions_per_resource,
+  demand_share,
+  supply_share,
+  gap_score,
+  demand_supply_ratio
+FROM open_gaps
+WHERE TRUE  -- BigQuery requires a WHERE/GROUP BY/HAVING alongside QUALIFY
+QUALIFY gap_rank <= 10

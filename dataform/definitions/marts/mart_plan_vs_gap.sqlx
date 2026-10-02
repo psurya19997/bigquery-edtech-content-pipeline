@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: "marts",
+  description: "Each valid Localization Plan row (SYNTHETIC sheet) matched to its DIKSHA supply/demand cell (board x language x grade x subject group), with an alignment verdict: is the team planning content where the real gaps are? Rejected sheet rows are excluded (see ops.localization_plan_rejects).",
+  assertions: {
+    uniqueKey: ["plan_id"],
+    nonNull: ["plan_id", "alignment"]
+  }
+}
+
+WITH ranked_cells AS (
+  -- Rank every DIKSHA cell within its language by gap_score (1 = biggest gap).
+  SELECT
+    *,
+    RANK() OVER (PARTITION BY language ORDER BY gap_score DESC) AS gap_rank_in_language,
+    COUNT(*) OVER (PARTITION BY language) AS cells_in_language,
+    PERCENT_RANK() OVER (PARTITION BY language ORDER BY gap_score) AS gap_percentile
+  FROM ${ref("mart_supply_demand")}
+)
+
+SELECT
+  p.plan_id,
+  p.language,
+  p.board,
+  p.grade_label,
+  p.subject_group,
+  p.resources_planned,
+  p.owner,
+  p.status,
+  p.target_date,
+  c.n_resources AS existing_resources,
+  c.total_play_sessions,
+  c.sessions_per_resource,
+  c.demand_share,
+  c.supply_share,
+  c.gap_score,
+  c.demand_supply_ratio,
+  c.gap_rank_in_language,
+  c.cells_in_language,
+  CASE
+    WHEN c.language IS NULL THEN 'No DIKSHA content yet'  -- nothing exists: new ground
+    WHEN c.gap_percentile >= 0.75 THEN 'Targets a top gap'  -- top quarter of gaps in the language
+    WHEN c.gap_score > 0 THEN 'Targets a gap'
+    ELSE 'Already well supplied'  -- demand share <= supply share: lower priority
+  END AS alignment,
+  p.sheet_row,
+  p.loaded_at AS plan_loaded_at
+FROM ${ref("stg_localization_plan")} AS p
+LEFT JOIN ranked_cells AS c
+  ON c.board = p.board_key
+  AND c.language = p.language
+  AND c.grade_num = p.grade_num
+  AND c.subject_group = p.subject_group
+WHERE p.is_valid

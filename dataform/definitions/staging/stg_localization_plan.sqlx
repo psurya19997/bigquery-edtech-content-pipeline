@@ -1,0 +1,102 @@
+config {
+  type: "table",
+  schema: "staging",
+  description: "The latest snapshot of the Localization Plan sheet (SYNTHETIC), cleaned. Fixable mess is fixed (language spellings/codes, grade formats, two date formats); rows that can't be trusted are kept but flagged with reject_reasons and is_valid = FALSE. Marts use only is_valid rows. Rejects are listed in ops.localization_plan_rejects.",
+  assertions: {
+    uniqueKey: ["sheet_row"],
+    nonNull: ["sheet_row", "plan_id"]
+  }
+}
+
+WITH latest_load AS (
+  -- Each run of sheets-ingest appends a full copy of the sheet: use only the newest copy.
+  SELECT *
+  FROM ${ref("raw", "localization_plan_snapshot")}
+  WHERE _load_id = (
+    SELECT _load_id FROM ${ref("raw", "localization_plan_snapshot")}
+    ORDER BY _ingested_at DESC LIMIT 1
+  )
+),
+
+cleaned AS (
+  SELECT
+    p._row_number AS sheet_row,
+    TRIM(p.plan_id) AS plan_id,
+    p.language AS language_raw,
+    -- "Marathi " / "marathi" / "Oriya" via the shared language map; codes like "MR" here.
+    COALESCE(
+      m.language,
+      CASE LOWER(TRIM(p.language))
+        WHEN 'hi' THEN 'Hindi' WHEN 'mr' THEN 'Marathi' WHEN 'gu' THEN 'Gujarati'
+        WHEN 'kn' THEN 'Kannada' WHEN 'pa' THEN 'Punjabi' WHEN 'as' THEN 'Assamese'
+        WHEN 'or' THEN 'Odia' WHEN 'od' THEN 'Odia' WHEN 'en' THEN 'English'
+      END
+    ) AS language,
+    TRIM(p.board) AS board,
+    LOWER(TRIM(p.board)) AS board_key,  -- DIKSHA stores boards in lower case
+    p.grade AS grade_raw,
+    -- "Class 6" / "6" / "VII" / "Class VII"
+    COALESCE(
+      SAFE_CAST(REGEXP_EXTRACT(UPPER(TRIM(p.grade)), r'^(?:CLASS\s*)?(\d{1,2})$') AS INT64),
+      CASE REGEXP_EXTRACT(UPPER(TRIM(p.grade)), r'^(?:CLASS\s*)?([IVX]+)$')
+        WHEN 'I' THEN 1 WHEN 'II' THEN 2 WHEN 'III' THEN 3 WHEN 'IV' THEN 4
+        WHEN 'V' THEN 5 WHEN 'VI' THEN 6 WHEN 'VII' THEN 7 WHEN 'VIII' THEN 8
+        WHEN 'IX' THEN 9 WHEN 'X' THEN 10 WHEN 'XI' THEN 11 WHEN 'XII' THEN 12
+      END
+    ) AS grade_num,
+    -- Must match a subject group in staging.stg_diksha_subject
+    CASE LOWER(TRIM(p.subject))
+      WHEN 'mathematics' THEN 'Mathematics' WHEN 'maths' THEN 'Mathematics'
+      WHEN 'science' THEN 'Science' WHEN 'english' THEN 'English' WHEN 'hindi' THEN 'Hindi'
+      WHEN 'social science' THEN 'Social Science'
+      WHEN 'environmental studies' THEN 'Environmental Studies' WHEN 'evs' THEN 'Environmental Studies'
+    END AS subject_group,
+    p.subject AS subject_raw,
+    p.resources_planned AS resources_planned_raw,
+    SAFE_CAST(TRIM(p.resources_planned) AS INT64) AS resources_planned,  -- "forty" -> NULL
+    TRIM(p.owner) AS owner,
+    LOWER(TRIM(p.status)) AS status,
+    p.target_date AS target_date_raw,
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', TRIM(p.target_date)),
+      SAFE.PARSE_DATE('%d/%m/%Y', TRIM(p.target_date))  -- "15/12/2026"
+    ) AS target_date,
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', TRIM(p.last_updated)),
+      SAFE.PARSE_DATE('%d/%m/%Y', TRIM(p.last_updated))
+    ) AS last_updated,
+    p.notes,
+    -- The same plan_id twice: keep the first row, flag the later copy.
+    ROW_NUMBER() OVER (PARTITION BY TRIM(p.plan_id) ORDER BY p._row_number) > 1 AS is_duplicate,
+    p._load_id AS load_id,
+    p._ingested_at AS loaded_at
+  FROM latest_load AS p
+  LEFT JOIN ${ref("language_map")} AS m
+    ON m.medium_key = LOWER(TRIM(p.language))
+),
+
+with_reasons AS (
+  SELECT
+    *,
+    -- Every check that fails adds a reason; a row with no reasons is valid.
+    ARRAY(
+      SELECT reason FROM UNNEST([
+        IF(is_duplicate, 'duplicate plan_id', NULL),
+        IF(status IS NULL, 'missing status', NULL),
+        IF(status NOT IN ('planned', 'in_production', 'published', 'dropped'), 'unknown status', NULL),
+        IF(resources_planned IS NULL, 'resources_planned is not a number', NULL),
+        IF(language IS NULL, 'unknown language', NULL),
+        IF(grade_num IS NULL OR grade_num NOT BETWEEN 1 AND 12, 'unknown grade', NULL),
+        IF(subject_group IS NULL, 'unknown subject', NULL),
+        IF(target_date IS NULL, 'unparseable target_date', NULL)
+      ]) AS reason
+      WHERE reason IS NOT NULL
+    ) AS reject_reasons
+  FROM cleaned
+)
+
+SELECT
+  *,
+  IF(grade_num BETWEEN 1 AND 12, CONCAT('Class ', CAST(grade_num AS STRING)), NULL) AS grade_label,
+  ARRAY_LENGTH(reject_reasons) = 0 AS is_valid
+FROM with_reasons
