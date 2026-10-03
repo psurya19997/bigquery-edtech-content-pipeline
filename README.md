@@ -113,6 +113,51 @@ tests/          pytest suite on saved fixtures, no live network calls
 
 Details and every API test: [docs/ingestion_design.md](docs/ingestion_design.md). Column definitions: [docs/data_dictionary.md](docs/data_dictionary.md). Decision records: [docs/decisions/](docs/decisions/).
 
+## ELT in Dataform
+
+Simplified lineage (the full graph has 10 staging tables, 7 marts, 3 ops views and 4 assertions):
+
+```mermaid
+flowchart LR
+    subgraph raw
+      r1[diksha_content]
+      r2[diksha_metrics_snapshot]
+      r3[youtube_videos + stats]
+      r4[worldbank + uis]
+      r5[localization_plan_snapshot]
+    end
+    subgraph staging
+      s1[DIKSHA content<br/>+ language, grade, subject]
+      s2[metrics_daily<br/>incremental]
+      s3[youtube videos + stats_daily]
+      s4[indicators]
+      s5[localization_plan<br/>valid / rejected rows]
+    end
+    subgraph marts
+      m1[supply_demand]
+      m2[language_coverage]
+      m3[content_features]
+      m4[youtube_performance]
+      m5[national_context]
+      m6[plan_vs_gap]
+      m7[unplanned_gaps]
+    end
+    r1 --> s1
+    r2 --> s2
+    r3 --> s3
+    r4 --> s4
+    r5 --> s5
+    s1 & s2 --> m1
+    s1 --> m2
+    s1 --> m3
+    s3 --> m4
+    s4 --> m5
+    m1 & s5 --> m6
+    m1 & s5 --> m7
+```
+
+Assertions run with the workflow and fail the 07:00 run on a duplicate or null key, an unmapped language, a high sheet reject rate, or a stale source. Models live in [dataform/definitions/](dataform/definitions/).
+
 ## How to run it
 
 **Tests** (fixtures only, no network):
